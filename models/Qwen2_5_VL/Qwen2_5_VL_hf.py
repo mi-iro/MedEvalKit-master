@@ -24,14 +24,20 @@ class Args:
 class Qwen2_5_VL:
     def __init__(self,model_path,args):
         super().__init__()
+        # self.llm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        # model_path, torch_dtype="auto", device_map="auto",attn_implementation="flash_attention_2")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.llm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        model_path, torch_dtype="auto", device_map="auto",attn_implementation="flash_attention_2")
+            model_path, torch_dtype="auto",
+        ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_path)
 
         self.temperature = args.temperature
         self.top_p = args.top_p
         self.repetition_penalty = args.repetition_penalty
         self.max_new_tokens = args.max_new_tokens
+
+        # print(self.llm.device)
 
 
     def process_messages(self,messages):
@@ -63,8 +69,9 @@ class Qwen2_5_VL:
             padding=True,
             return_tensors="pt",
 )
-        inputs = inputs.to("cuda")
-        #inputs = inputs.to(self.llm.device)  # Ensure inputs are on the same device as the model
+        # inputs = inputs.to("cuda")
+        # print('***'+str(self.llm.device)+'****')
+        inputs = inputs.to(self.llm.device)  # Ensure inputs are on the same device as the model
         return inputs
 
 
