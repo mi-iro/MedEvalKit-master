@@ -1,6 +1,4 @@
-
-from transformers import AutoProcessor, AutoTokenizer
-from transformers import Qwen2_5_VLForConditionalGeneration
+from transformers import AutoProcessor, AutoTokenizer, Qwen2_5_VLForConditionalGeneration
 import torch
 from PIL import Image
 from dataclasses import dataclass
@@ -52,7 +50,7 @@ def encode_pil_image_to_base64(pil_image):
     img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return img_str
 
-# ------------------ DeepEyes Model ------------------
+# ------------------ DeepEyes Model (Corrected Implementation) ------------------
 class DeepEyes:
     def __init__(self, model_path, args):
         super().__init__()
@@ -61,7 +59,7 @@ class DeepEyes:
             model_path, torch_dtype="auto", device_map="auto"
         )
         self.processor = AutoProcessor.from_pretrained(model_path)
-        self.tokenizer = self.processor.tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         self.temperature = args.temperature
         self.top_p = args.top_p
@@ -87,27 +85,20 @@ Return a json object with function name and arguments within <tool_call></tool_c
 <tool_call>
 {"name": "image_zoom_in_tool", "arguments": {"bbox_2d": [10, 20, 100, 200], "label": "the apple on the desk"}}
 </tool_call>"""
-        self.user_prompt = "
-Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly as:  <think>...</think>  <tool_call>...</tool_call> (if tools needed)  <answer>...</answer> "
+        self.user_prompt = "Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly as:  <think>...</think>  <tool_call>...</tool_call> (if tools needed)  <answer>...</answer> "
         self.start_token = "<tool_call>"
         self.end_token = "</tool_call>"
         
-        # Define stop tokens, including the end of tool call
         stop_words = [self.end_token, "<|im_end|>", "<|endoftext|>"]
         self.stop_words_ids = [self.tokenizer.encode(word)[0] for word in stop_words]
 
-
     def generate_output(self, messages):
-        # History of the conversation
         chat_history = []
-        # List of images in the conversation
         images = []
 
         # 1. Initial setup
-        # Add system prompt
         chat_history.append({"role": "system", "content": self.system_prompt})
-        
-        # Add initial user message and image
+
         pil_img = messages.get("image")
         if pil_img:
             images.append(pil_img)
@@ -117,7 +108,6 @@ Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
             ]
         else:
             user_content = [{"type": "text", "text": messages["prompt"] + self.user_prompt}]
-        
         chat_history.append({"role": "user", "content": user_content})
 
         response_message = ""
@@ -125,13 +115,10 @@ Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
 
         # 2. Multi-turn conversation loop
         while '</answer>' not in response_message and try_count < 10:
-            
-            # Prepare model inputs
-            text = self.tokenizer.apply_chat_template(
+            text = self.processor.apply_chat_template(
                 chat_history, tokenize=False, add_generation_prompt=True
             )
             
-            # Process images
             processed_images = []
             for img in images:
                 ori_width, ori_height = img.size
@@ -147,15 +134,13 @@ Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
                 top_p=self.top_p,
                 repetition_penalty=self.repetition_penalty,
                 max_new_tokens=self.max_new_tokens,
-                do_sample=False if self.temperature == 0 else True,
+                do_sample=(self.temperature > 0),
                 eos_token_id=self.stop_words_ids
             )
             
-            # Decode and process the response
             generated_ids = generated_ids[0][len(inputs.input_ids[0]):]
             response_message = self.tokenizer.decode(generated_ids, skip_special_tokens=False)
             
-            # Append assistant's raw response to history
             chat_history.append({"role": "assistant", "content": response_message})
 
             # 3. Handle tool calls
@@ -167,28 +152,26 @@ Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
                         bbox = action['arguments']['bbox_2d']
                         left, top, right, bottom = map(int, bbox)
                         
-                        # The tool operates on the last image added
                         source_image = images[-1]
                         cropped_image = source_image.crop((left, top, right, bottom))
-                        images.append(cropped_image) # Add new image for the next turn
+                        images.append(cropped_image)
                         
-                        # Create a tool response message pointing to the new image
                         tool_response_content = [
-                            {"type": "text", "text": f"<tool_response><image_{len(images)}></tool_response>"}
+                            {"type": "text", "text": "<tool_response>"},
+                            {"type": "image"}, 
+                            {"type": "text", "text": "</tool_response>"}
                         ]
                         chat_history.append({"role": "user", "content": tool_response_content})
 
-                except (json.JSONDecodeError, KeyError) as e:
-                    # If tool call is malformed, add an error message and stop
-                    chat_history.append({"role": "user", "content": "Error parsing tool call. Please provide the final answer."})
+                except (json.JSONDecodeError, KeyError):
+                    chat_history.append({"role": "user", "content": "Error parsing tool call."})
             
             try_count += 1
 
         # 4. Extract final answer
         if '</answer>' in response_message and '<answer>' in response_message:
             output_text = response_message.split('<answer>')[1].split('</answer>')[0].strip()
-        else: # Fallback if no answer tag is found
-            # Clean up response by removing special tokens and tool calls
+        else:
             final_text = response_message.split('<answer>')[-1]
             final_text = final_text.replace(self.start_token, "").replace(self.end_token, "")
             output_text = final_text.strip()
@@ -204,11 +187,20 @@ Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
 
 # ------------------ Example Usage ------------------
 if __name__ == "__main__":
-    model_path = "Qwen/Qwen-VL-Chat" # Replace with your model path
-    image_path = "path/to/your/image.jpg" # Replace with your image path
+    # Replace with your actual model path
+    model_path = "/path/to/your/Qwen-VL-Chat"
+    model_path = "/mnt/b_public/data/libo/model/deepeyes-7B" # Replace with your model path
+    # Replace with a path to a real image for testing
+    image_path = "/path/to/your/image.jpg"
+    image_path = "/mnt/b_public/data/libo/MedEvalKit-master/pku.jpg" # Replace with your image path
 
-    model = DeepEyes(model_path, Args())
-    img = Image.open(image_path).convert("RGB")
 
-    messages = {"image": img, "prompt": "What is in this image?"}
-    print(model.generate_output(messages))
+    try:
+        model = DeepEyes(model_path, Args())
+        img = Image.open(image_path).convert("RGB")
+
+        messages = {"image": img, "prompt": "What is in this image? Please describe it."}
+        print(model.generate_output(messages))
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        print("Please ensure your model_path and image_path are correct.")
