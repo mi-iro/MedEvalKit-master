@@ -62,6 +62,7 @@ class DeepEyes:
             tensor_parallel_size=int(os.environ.get("tensor_parallel_size", 1)),
             gpu_memory_utilization=0.7,
             limit_mm_per_prompt={"image": int(os.environ.get("max_image_num", 10))},
+            mm_processor_kwargs={"use_fast": True},
         )
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=True)
         self.tokenizer = self.llm.get_tokenizer()
@@ -179,8 +180,10 @@ Return a json object with function name and arguments within <tool_call></tool_c
 
     def generate_outputs(self, messages_list):
         llm_inputs_list = []
+        prompts = []
+        multi_modal_data_list = []
+
         for messages in messages_list:
-            # This simplified processing assumes single-turn generation for batching
             chat_history = []
             images = []
             chat_history.append({"role": "system", "content": self.system_prompt})
@@ -199,18 +202,19 @@ Return a json object with function name and arguments within <tool_call></tool_c
             text = self.processor.apply_chat_template(
                 chat_history, tokenize=False, add_generation_prompt=True
             )
+            prompts.append(text)
 
             processed_images = []
             for img in images:
                 ori_width, ori_height = img.size
                 resize_w, resize_h = smart_resize(ori_width, ori_height, factor=IMAGE_FACTOR)
                 processed_images.append(img.resize((resize_w, resize_h), resample=Image.BICUBIC))
+            
+            multi_modal_data_list.append({"image": processed_images})
 
-            llm_inputs = {
-                "prompt": text,
-                "multi_modal_data": {"image": processed_images}
-            }
-            llm_inputs_list.append(llm_inputs)
+        # This is a simplified way to create llm_inputs for batching.
+        # In a real-world scenario, you might need more sophisticated logic to handle different numbers of images per prompt.
+        llm_inputs_list = [{"prompt": p, "multi_modal_data": m} for p, m in zip(prompts, multi_modal_data_list)]
 
         outputs = self.llm.generate(llm_inputs_list, self.sampling_params)
         
