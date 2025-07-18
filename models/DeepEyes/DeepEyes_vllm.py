@@ -60,11 +60,10 @@ class DeepEyes:
             model=model_path,
             trust_remote_code=True,
             tensor_parallel_size=int(os.environ.get("tensor_parallel_size", 1)),
-            enforce_eager=True,
             gpu_memory_utilization=0.7,
             limit_mm_per_prompt={"image": int(os.environ.get("max_image_num", 10))},
         )
-        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=True)
         self.tokenizer = self.llm.get_tokenizer()
 
 
@@ -179,12 +178,52 @@ Return a json object with function name and arguments within <tool_call></tool_c
         return self.process_messages(messages)
 
     def generate_outputs(self, messages_list):
-        # VLLM's generate method can handle batching, but the logic for multi-turn is complex to batch.
-        # Processing one by one for now.
-        res = []
+        llm_inputs_list = []
         for messages in messages_list:
-            result = self.generate_output(messages)
-            res.append(result)
+            # This simplified processing assumes single-turn generation for batching
+            chat_history = []
+            images = []
+            chat_history.append({"role": "system", "content": self.system_prompt})
+
+            pil_img = messages.get("image")
+            if pil_img:
+                images.append(pil_img)
+                user_content = [
+                    {"type": "image"},
+                    {"type": "text", "text": messages["prompt"] + self.user_prompt}
+                ]
+            else:
+                user_content = [{"type": "text", "text": messages["prompt"] + self.user_prompt}]
+            chat_history.append({"role": "user", "content": user_content})
+
+            text = self.processor.apply_chat_template(
+                chat_history, tokenize=False, add_generation_prompt=True
+            )
+
+            processed_images = []
+            for img in images:
+                ori_width, ori_height = img.size
+                resize_w, resize_h = smart_resize(ori_width, ori_height, factor=IMAGE_FACTOR)
+                processed_images.append(img.resize((resize_w, resize_h), resample=Image.BICUBIC))
+
+            llm_inputs = {
+                "prompt": text,
+                "multi_modal_data": {"image": processed_images}
+            }
+            llm_inputs_list.append(llm_inputs)
+
+        outputs = self.llm.generate(llm_inputs_list, self.sampling_params)
+        
+        res = []
+        for output in outputs:
+            response_message = output.outputs[0].text
+            if '</answer>' in response_message and '<answer>' in response_message:
+                output_text = response_message.split('<answer>')[1].split('</answer>')[0].strip()
+            else:
+                final_text = response_message.split('<answer>')[-1]
+                final_text = final_text.replace(self.start_token, "").replace(self.end_token, "")
+                output_text = final_text.strip()
+            res.append(output_text)
         return res
 
 # ------------------ Example Usage ------------------
