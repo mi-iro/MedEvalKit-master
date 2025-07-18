@@ -7,13 +7,15 @@ EVAL_DATASETS="PATH_VQA"
 DATASETS_PATH="hf"
 OUTPUT_PATH="eval_results/{}"
 # TestModel,Qwen2-VL,Qwen2.5-VL,BiMediX2,LLava_Med,Huatuo,InternVL,Llama-3.2,LLava,Janus,HealthGPT,BiomedGPT,Vllm_Text,MedGemma,Med_Flamingo,MedDr
-MODEL_NAME="Qwen2.5-VL"
-MODEL_PATH="/mnt/b_public/data/libo/model/VL-7B"
+# MODEL_NAME="Qwen2.5-VL"
+# MODEL_PATH="/mnt/b_public/data/libo/model/VL-7B"
+MODEL_NAME="DeepEyes"
+MODEL_PATH="/mnt/b_public/data/libo/model/deepeyes-7B"
 
 #vllm setting
 #CUDA_VISIBLE_DEVICES="0"
-TENSOR_PARALLEL_SIZE="1"
-USE_VLLM="False"
+TENSOR_PARALLEL_SIZE="4"
+USE_VLLM="True"
 
 #Eval setting
 SEED=42

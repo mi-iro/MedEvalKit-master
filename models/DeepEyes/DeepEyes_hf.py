@@ -56,7 +56,7 @@ class DeepEyes:
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.llm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_path, torch_dtype="auto", device_map="auto"
+            model_path, torch_dtype="auto", device_map="auto", attn_implementation="sdpa"
         )
         self.processor = AutoProcessor.from_pretrained(model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)

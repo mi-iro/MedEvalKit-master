@@ -82,8 +82,8 @@ def main():
 
 
     # vllm and torch setting
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-    os.environ["NCCL_IGNORE_DISABLED_P2P"] = "1"
+    # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    # os.environ["NCCL_IGNORE_DISABLED_P2P"] = "1"
     if args.cuda_visible_devices is not None:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
     if args.use_vllm == "True":

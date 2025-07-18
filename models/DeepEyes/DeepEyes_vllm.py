@@ -63,6 +63,7 @@ class DeepEyes:
             gpu_memory_utilization=0.9,
             limit_mm_per_prompt={"image": int(os.environ.get("max_image_num", 10))},
             mm_processor_kwargs={"use_fast": True},
+            # enforce_eager=True,
         )
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=True)
         self.tokenizer = self.llm.get_tokenizer()

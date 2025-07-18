@@ -140,6 +140,15 @@ class MedDr:
         from models.MedDr.MedDr import MedDr
         return MedDr(model_path, args)
 
+@LLMRegistry.register("DeepEyes")
+class DeepEyes:
+    def __new__(cls, model_path: str, args: Any) -> Any:
+        if os.environ.get("use_vllm", "True") == "True":
+            from models.DeepEyes.DeepEyes_vllm import DeepEyes as DeepEyesImpl
+        else:
+            from models.DeepEyes.DeepEyes_hf import DeepEyes as DeepEyesImpl
+        return DeepEyesImpl(model_path, args)
+
 def init_llm(args):
     try:
         model_class = LLMRegistry.get_model(args.model_name)
