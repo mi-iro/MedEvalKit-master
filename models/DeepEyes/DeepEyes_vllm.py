@@ -59,8 +59,8 @@ class DeepEyes:
         self.llm = LLM(
             model=model_path,
             trust_remote_code=True,
-            tensor_parallel_size=int(os.environ.get("tensor_parallel_size", 1)),
-            gpu_memory_utilization=0.7,
+            tensor_parallel_size=int(os.environ.get("tensor_parallel_size", 4)),
+            gpu_memory_utilization=0.9,
             limit_mm_per_prompt={"image": int(os.environ.get("max_image_num", 10))},
             mm_processor_kwargs={"use_fast": True},
         )
