@@ -101,7 +101,7 @@ Return a json object with function name and arguments within <tool_call></tool_c
             stop=stop_words,
         )
 
-    def generate_outputs(self, messages_list):
+    def generate_outputs(self, messages_list, return_history=False):
         """
         以有状态、迭代的方式高效处理批量请求，并支持工具调用。
         """
@@ -109,7 +109,22 @@ Return a json object with function name and arguments within <tool_call></tool_c
         # 使用一个列表来追踪每个请求的独立状态
         request_states = []
         for i, messages in enumerate(messages_list):
-            pil_img = messages.get("image")
+            # --- START MODIFICATION ---
+            image_input = messages.get("image")
+            pil_img = None
+            if image_input:
+                if isinstance(image_input, str):  # 新增：如果输入是字符串（文件路径）
+                    try:
+                        pil_img = Image.open(image_input).convert("RGB")
+                    except FileNotFoundError:
+                        # 你可以在此处理文件不存在的异常情况
+                        print(f"Warning: Image file not found at path: {image_input}. Skipping image for this request.")
+                        pass # pil_img 保持为 None
+                elif isinstance(image_input, Image.Image): # 保留：如果输入已经是PIL图像对象
+                    pil_img = image_input
+                # 你也可以在这里添加对其他意外类型的处理
+            # --- END MODIFICATION ---
+
             images = [pil_img] if pil_img else []
             
             chat_history = [
@@ -136,6 +151,7 @@ Return a json object with function name and arguments within <tool_call></tool_c
 
         # 2. 主循环，直到所有活动请求都处理完毕
         for i in range(max_iterations):
+            # (后续代码无需改动)
             active_requests = [req for req in request_states if req["status"] == "active"]
             if not active_requests:
                 break # 所有请求都已完成或失败
@@ -150,6 +166,7 @@ Return a json object with function name and arguments within <tool_call></tool_c
                 
                 # 准备图片
                 processed_images = []
+                # 因为上面的修改，这里的img可以确保是PIL对象（如果存在）
                 for img in req["images"]:
                     ori_width, ori_height = img.size
                     resize_w, resize_h = smart_resize(ori_width, ori_height)
@@ -172,9 +189,7 @@ Return a json object with function name and arguments within <tool_call></tool_c
                 req_state["try_count"] += 1
 
                 # 检查是需要工具调用还是已完成
-                # if self.start_token in response_message and self.end_token in response_message:
                 if self.start_token in response_message:
-                    # 情况A: 需要工具调用
                     try:
                         # 补充 </tool_call>
                         response_message += self.end_token
@@ -186,12 +201,10 @@ Return a json object with function name and arguments within <tool_call></tool_c
                             bbox = action['arguments']['bbox_2d']
                             left, top, right, bottom = map(int, bbox)
                             
-                            # 注意：这里需要明确裁剪哪张图，通常是第一张或最后一张
                             source_image = req_state["images"][0] 
                             cropped_image = source_image.crop((left, top, right, bottom))
                             req_state["images"].append(cropped_image)
                             
-                            # 为下一轮准备工具响应
                             tool_response_content = [
                                 {"type": "text", "text": "<tool_response>"},
                                 {"type": "image"}, 
@@ -199,7 +212,7 @@ Return a json object with function name and arguments within <tool_call></tool_c
                             ]
                             req_state["chat_history"].append({"role": "user", "content": tool_response_content})
                         else:
-                            req_state["status"] = "failed" # 未知的工具
+                            req_state["status"] = "failed"
                             req_state["result"] = "Error: Unknown tool call."
 
                     except Exception as e:
@@ -207,17 +220,17 @@ Return a json object with function name and arguments within <tool_call></tool_c
                         req_state["result"] = f"Error parsing tool call: {e}"
 
                 elif '<answer>' in response_message:
-                    # 情况B: 已完成
                     req_state["status"] = "completed"
                     req_state["result"] = response_message.split('<answer>')[1].strip()
+                    response_message += '</answer>'
+                    req_state["chat_history"][-1] = {"role": "assistant", "content": response_message}
                 elif req_state["try_count"] >= max_iterations:
-                    # 情况C: 超时/失败
                     req_state["status"] = "failed"
                     req_state["result"] = "Error: Max iterations reached without a final answer."
 
         # 6. 整理并返回最终结果
         for req in request_states:
-            final_results[req["id"]] = req["result"]
+            final_results[req["id"]] = req["chat_history"] if return_history else req["result"]
             
         return final_results
 
@@ -257,7 +270,7 @@ if __name__ == "__main__":
 
         # --- 4. 调用批处理函数 ---
         # generate_outputs 函数会处理整个列表
-        batch_results = model.generate_outputs(messages_list)
+        batch_results = model.generate_outputs(messages_list, return_history=True)
 
         # --- 5. 打印批处理结果 ---
         print("\n" + "="*15 + " 批处理完成 " + "="*15)
